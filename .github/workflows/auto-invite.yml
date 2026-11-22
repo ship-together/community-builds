@@ -1,0 +1,49 @@
+name: Auto Invite to ship-together
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  invite-member:
+    if: contains(github.event.issue.title, 'Invite Me') || contains(github.event.issue.title, 'invite me')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send org invitation and close issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ORG_INVITE_TOKEN }}
+          script: |
+            const org = 'ship-together';
+            const body = context.payload.issue.body || '';
+            const author = context.payload.issue.user.login;
+
+            // Pull username from a form field like "### GitHub Username\n\nfathia-hub" or "@username"
+            const fieldMatch = body.match(/(?:github\s*username|username)[^\n]*\n+([a-zA-Z0-9-]+)/i);
+            const mentionMatch = body.match(/@([a-zA-Z0-9-]+)/);
+            const targetUsername = (fieldMatch && fieldMatch[1]) || (mentionMatch && mentionMatch[1]) || author;
+
+            const { data: user } = await github.rest.users.getByUsername({ username: targetUsername });
+
+            await github.rest.orgs.createInvitation({
+              org,
+              invitee_id: user.id,
+              role: 'direct_member'
+            });
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Sent a **${org}** organization invite to @${user.login}. Check your GitHub notifications or email to accept!`
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            });
